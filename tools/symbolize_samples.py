@@ -493,7 +493,8 @@ def symbolize(parser, args):
                 source = Path(source)
                 if os.path.realpath(source) == os.path.realpath(output) or (source.exists() and output.exists() and source.samefile(output)):
                     parser.error("symbolized output must be separate from the sample captures")
-    samples = load(args.samples, args.thread)
+    capture = load(args.samples, args.thread)
+    samples = capture
     if args.thread is not None and samples.threads and args.thread not in samples.threads:
         raise ValueError(f"{args.samples}: thread {args.thread} is not in the capture (threads: {', '.join(sorted(samples.threads, key=int))})")
     if args.out and not samples.stacks:
@@ -508,10 +509,10 @@ def symbolize(parser, args):
             except ValueError as error:
                 parser.error(str(error))
         samples = window(samples, earlier)
-    if args.out and samples.stacks:
-        referenced_modules = {name.lower() for name, _ in samples.self_counts}
-        referenced_modules.update(name.lower() for name, _ in samples.inclusive)
-        for frames in samples.stacks:
+    if args.out:
+        referenced_modules = {name.lower() for name, _ in capture.self_counts}
+        referenced_modules.update(name.lower() for name, _ in capture.inclusive)
+        for frames in capture.stacks:
             for frame in frames.split(";"):
                 name, separator, _ = frame.partition("+0x")
                 if separator:
@@ -540,8 +541,6 @@ def symbolize(parser, args):
         for line in summarize(symbolizer, samples, args.top):
             print(line)
     if args.out:
-        if not samples.stacks:
-            parser.error("--out needs a collapsed-stack file")
         with open(args.out, "w", encoding="utf-8") as output:
             for frames, count in samples.stacks.items():
                 output.write(";".join(symbolizer.frame(frame) for frame in frames.split(";")) + f" {count}\n")

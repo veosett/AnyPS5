@@ -633,6 +633,33 @@ class SymbolizeSamplesTests(unittest.TestCase):
         written = sorted(out.read_text(encoding="utf-8").splitlines())
         self.assertEqual(written, ["ntdll.dll+0x1;libSceAgcDriver.prx!AgcDriver_long_function_name 3", "ntdll.dll+0x1;libSceAgcDriver.prx!short 3"])
 
+    def test_since_writes_an_empty_output_when_no_samples_were_added(self):
+        module = self.libs / "sampled-module"
+        module_data = b"unsupported module data"
+        module.write_bytes(module_data)
+        earlier = self.root / "worker-early.collapsed.txt"
+        later = self.root / "worker-late.collapsed.txt"
+        capture = "# module sampled-module 0x1000 0x1\nsampled-module+0x20 4\n"
+        for path in (earlier, later):
+            path.write_text(capture, encoding="utf-8")
+        output = self.root / "difference.collapsed.txt"
+        command = [sys.executable, symbolize_samples.__file__, str(later), "--since", str(earlier),
+                   "--libs", str(self.libs), "--require-matching-window"]
+
+        with self.subTest(output="distinct"):
+            output.write_text("previous output\n", encoding="utf-8")
+            result = subprocess.run([*command, "--out", str(output)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("0 samples", result.stdout)
+            self.assertEqual(output.read_bytes(), b"")
+
+        with self.subTest(output="module"):
+            result = subprocess.run([*command, "--out", str(module)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("must be separate from module inputs", result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(module.read_bytes(), module_data)
+
     def run_main(self, *arguments):
         printed = io.StringIO()
         errors = io.StringIO()
